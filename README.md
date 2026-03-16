@@ -20,3 +20,19 @@ A production-grade Hubitat integration for the **EyezOn UNO Alarm System**.
 - Fast location events for low-latency automations: `unoZoneEvent`
 - Watchdog reconnect and heartbeat polling
 - CID fast-path support for alarm-class events
+
+## Roadmap
+
+### v1.1
+Planned improvements:
+
+• alarm event history attributes  
+• semantic CID event mapping  
+• improved dashboard support  
+
+### v1.2
+Potential future improvements:
+
+• zone ignore / disable support  
+• optional event noise suppression  
+• extended CID event mapping
