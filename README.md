@@ -1,5 +1,8 @@
 # EyezOn UNO Hubitat Integration
-
+![Hubitat](https://img.shields.io/badge/Hubitat-Compatible-orange)
+![Protocol](https://img.shields.io/badge/Protocol-UNO%20TPI-green)
+![Install](https://img.shields.io/badge/Install-HPM-blue)
+![License](https://img.shields.io/badge/License-MIT-lightgrey)
 A production-grade Hubitat integration for the **EyezOn UNO Alarm System**.
 
 > **Important:** The EyezOn **UNO is a stand-alone alarm system**. It is **not** just an interface to another panel such as DSC or Honeywell. This integration communicates **directly with the UNO itself** over the **UNO TPI** TCP socket protocol on port **4025**.
