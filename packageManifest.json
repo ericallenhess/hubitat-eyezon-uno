@@ -1,0 +1,72 @@
+{
+  "packageName": "EyezOn UNO Hubitat Integration",
+  "minimumHEVersion": "2.3.0",
+  "author": "Eric Hess",
+  "version": "1.0.0",
+  "dateReleased": "2026-03-16",
+  "documentationLink": "https://github.com/ericallenhess/hubitat-eyezon-uno",
+  "communityLink": "https://community.hubitat.com/",
+  "releaseNotes": "Initial release: native Hubitat integration for the EyezOn UNO alarm system, including zone discovery, partition device, fast automation events, and watchdog reconnect.",
+  "licenseFile": "https://raw.githubusercontent.com/<your-github-username>/hubitat-eyezon-uno/main/LICENSE",
+  "apps": [
+    {
+      "id": "uno-app-0001",
+      "name": "EyezOn UNO Integration",
+      "namespace": "uno",
+      "location": "https://raw.githubusercontent.com/<your-github-username>/hubitat-eyezon-uno/main/apps/UNOIntegrationApp.groovy",
+      "required": true,
+      "oauth": false
+    }
+  ],
+  "drivers": [
+    {
+      "id": "uno-driver-connection-0001",
+      "name": "UNO Connection",
+      "namespace": "uno",
+      "location": "https://raw.githubusercontent.com/<your-github-username>/hubitat-eyezon-uno/main/drivers/UNOConnectionDriver.groovy",
+      "required": true
+    },
+    {
+      "id": "uno-driver-partition-0001",
+      "name": "UNO Partition",
+      "namespace": "uno",
+      "location": "https://raw.githubusercontent.com/<your-github-username>/hubitat-eyezon-uno/main/drivers/UNOPartitionDriver.groovy",
+      "required": true
+    },
+    {
+      "id": "uno-driver-zone-contact-0001",
+      "name": "UNO Zone Contact",
+      "namespace": "uno",
+      "location": "https://raw.githubusercontent.com/<your-github-username>/hubitat-eyezon-uno/main/drivers/UNOZoneContactDriver.groovy",
+      "required": true
+    },
+    {
+      "id": "uno-driver-zone-motion-0001",
+      "name": "UNO Zone Motion",
+      "namespace": "uno",
+      "location": "https://raw.githubusercontent.com/<your-github-username>/hubitat-eyezon-uno/main/drivers/UNOZoneMotionDriver.groovy",
+      "required": true
+    },
+    {
+      "id": "uno-driver-zone-smoke-0001",
+      "name": "UNO Zone Smoke",
+      "namespace": "uno",
+      "location": "https://raw.githubusercontent.com/<your-github-username>/hubitat-eyezon-uno/main/drivers/UNOZoneSmokeDriver.groovy",
+      "required": true
+    },
+    {
+      "id": "uno-driver-zone-co-0001",
+      "name": "UNO Zone CO",
+      "namespace": "uno",
+      "location": "https://raw.githubusercontent.com/<your-github-username>/hubitat-eyezon-uno/main/drivers/UNOZoneCODriver.groovy",
+      "required": true
+    },
+    {
+      "id": "uno-driver-zone-water-0001",
+      "name": "UNO Zone Water",
+      "namespace": "uno",
+      "location": "https://raw.githubusercontent.com/<your-github-username>/hubitat-eyezon-uno/main/drivers/UNOZoneWaterDriver.groovy",
+      "required": true
+    }
+  ]
+}
