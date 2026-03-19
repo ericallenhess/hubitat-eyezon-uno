@@ -19,6 +19,7 @@ def mainPage() {
             input "ip", "text", title: "UNO IP Address", required: true
             input "port", "number", title: "UNO Port", defaultValue: 4025, required: true
             input "password", "text", title: "UNO Local/TPI Password", required: true
+            input "restUsername", "text", title: "UNO REST Username", defaultValue: "user", required: false
             input "masterCode", "text", title: "Master Code (optional, for disarm)", required: false
         }
 
@@ -28,6 +29,13 @@ def mainPage() {
                 description: "Friendly name for the partition/alarm device",
                 defaultValue: "House Alarm",
                 required: false
+        }
+
+        section("REST Metadata / Startup Sync") {
+            input "useRestMetadata", "bool",
+                title: "Enable REST metadata and startup sync",
+                defaultValue: true
+            paragraph "Uses UNO REST endpoint D for labels and endpoint A for startup zone-state sync. TPI remains the real-time event engine."
         }
 
         section("Zone Discovery") {
@@ -46,7 +54,7 @@ def mainPage() {
                 required: true
         }
 
-        section("Zone Hints (optional but recommended)") {
+        section("Zone Hints (optional fallback / override)") {
             paragraph """One zone per line.
 Format:
 zoneNumber:Label:type
@@ -92,8 +100,20 @@ def initialize() {
     logInfo("Initializing UNO integration")
 
     state.zoneHintsMap = parseZoneHints(settings.zoneHints)
+    state.restZoneLabels = state.restZoneLabels ?: [:]
+    state.restPartitionLabel = state.restPartitionLabel ?: null
+    state.restSystemName = state.restSystemName ?: null
 
     ensureConnectionDevice()
+
+    if (settings.useRestMetadata == true) {
+        try {
+            loadRestMetadata()
+        } catch (e) {
+            log.warn "REST metadata load failed: ${e}"
+        }
+    }
+
     ensurePartitionDevice()
 
     if (settings.autoCreateConfiguredZones != false) {
@@ -136,7 +156,7 @@ private void ensureConnectionDevice() {
 
 private void ensurePartitionDevice() {
     String dni = "uno-partition-1"
-    String label = settings.partitionLabel ?: "House Alarm"
+    String label = settings.partitionLabel ?: state.restPartitionLabel ?: "House Alarm"
 
     def dev = getChildDevice(dni)
 
@@ -171,8 +191,10 @@ private void applyConnectionSettings() {
     conn.updateSetting("ip", [value: settings.ip, type: "text"])
     conn.updateSetting("port", [value: "${settings.port ?: 4025}", type: "number"])
     conn.updateSetting("password", [value: settings.password, type: "text"])
+    conn.updateSetting("restUsername", [value: settings.restUsername ?: "user", type: "text"])
     conn.updateSetting("masterCode", [value: settings.masterCode ?: "", type: "text"])
     conn.updateSetting("zoneCount", [value: "${safeInt(settings.zoneCount, 27)}", type: "number"])
+    conn.updateSetting("useRestMetadata", [value: settings.useRestMetadata == true, type: "bool"])
     conn.updateSetting("debugLogging", [value: settings.debugLogging == true, type: "bool"])
     conn.updateSetting("traceLogging", [value: settings.traceLogging == true, type: "bool"])
     conn.updateSetting("heartbeatMinutes", [value: (settings.heartbeatMinutes ?: "1").toString(), type: "enum"])
@@ -216,6 +238,7 @@ def upsertDiscoveredZone(Integer zoneNum, String suggestedType = null, String su
 
     String hintedLabel = hint.label?.trim()
     String hintedType  = hint.type?.trim()
+    String restLabel   = state.restZoneLabels ? state.restZoneLabels["${zoneNum}"] : null
 
     String inferredName = suggestedName?.trim()
     String inferredType = suggestedType?.trim()
@@ -223,7 +246,7 @@ def upsertDiscoveredZone(Integer zoneNum, String suggestedType = null, String su
     String resolvedType = canonicalType(
         hintedType ?:
         inferredType ?:
-        inferTypeFromName(hintedLabel ?: inferredName) ?:
+        inferTypeFromName(hintedLabel ?: restLabel ?: inferredName) ?:
         settings.defaultUnknownZoneType ?:
         "contact"
     )
@@ -232,7 +255,7 @@ def upsertDiscoveredZone(Integer zoneNum, String suggestedType = null, String su
     String dni = "uno-zone-${zoneNum}"
     def existing = getChildDevice(dni)
 
-    String finalLabel = hintedLabel ?: inferredName ?: existing?.label ?: "Zone ${zoneNum}"
+    String finalLabel = hintedLabel ?: restLabel ?: inferredName ?: existing?.label ?: "Zone ${zoneNum}"
 
     if (!existing) {
         addChildDevice(
@@ -310,10 +333,11 @@ private void reconcileExistingZones() {
         Map hint = hints["${zoneNum}"] ?: [:]
         String hintedLabel = hint.label?.trim()
         String hintedType  = canonicalType(hint.type?.trim())
+        String restLabel   = state.restZoneLabels ? state.restZoneLabels["${zoneNum}"] : null
 
-        String desiredLabel = hintedLabel ?: "Zone ${zoneNum}"
+        String desiredLabel = hintedLabel ?: restLabel ?: "Zone ${zoneNum}"
         String desiredDriver = driverNameForType(
-            hintedType ?: inferTypeFromName(hintedLabel) ?: settings.defaultUnknownZoneType ?: "contact"
+            hintedType ?: inferTypeFromName(hintedLabel ?: restLabel) ?: settings.defaultUnknownZoneType ?: "contact"
         )
 
         boolean needsRecreate = false
@@ -362,6 +386,65 @@ private void reconcileExistingZones() {
     }
 }
 
+private void loadRestMetadata() {
+    Map meta = restGetJson("D")
+    if (!meta) return
+
+    List zoneLabels = meta["zone labels"] instanceof List ? meta["zone labels"] : []
+    Map<String, String> mapped = [:]
+
+    zoneLabels.eachWithIndex { String label, int idx ->
+        String cleaned = (label ?: "").trim()
+        if (cleaned) {
+            mapped["${idx + 1}"] = cleaned
+        }
+    }
+
+    state.restZoneLabels = mapped
+
+    List partitionLabels = meta["partition labels"] instanceof List ? meta["partition labels"] : []
+    String p1 = partitionLabels ? (partitionLabels[0] ?: "").trim() : null
+    if (p1) {
+        state.restPartitionLabel = p1
+    }
+
+    String sys = (meta["system name"] ?: "").toString().trim()
+    if (sys) {
+        state.restSystemName = sys
+    }
+
+    logInfo("Loaded REST metadata: ${mapped.size()} zone labels" + (state.restPartitionLabel ? ", partition=${state.restPartitionLabel}" : ""))
+}
+
+private Map restGetJson(String path) {
+    if (!settings.ip || !settings.password) return null
+
+    Map result = null
+    String username = (settings.restUsername ?: "user").toString()
+    String auth = "${username}:${settings.password}".bytes.encodeBase64().toString()
+
+    httpGet(
+        [
+            uri: "http://${settings.ip}/${path}",
+            headers: [
+                "Authorization": "Basic ${auth}"
+            ],
+            contentType: "application/json",
+            timeout: 5
+        ]
+    ) { resp ->
+        if (resp?.status == 200) {
+            if (resp.data instanceof Map) {
+                result = resp.data as Map
+            } else if (resp.data) {
+                result = resp.data
+            }
+        }
+    }
+
+    return result
+}
+
 private Integer safeParseZoneFromDni(String dni) {
     try {
         return dni.replace("uno-zone-", "") as Integer
@@ -392,19 +475,15 @@ private String canonicalType(String raw) {
         case "pir":
         case "interior":
             return "motion"
-
         case "fire":
         case "heat":
             return "smoke"
-
         case "carbonmonoxide":
         case "carbon_monoxide":
             return "co"
-
         case "leak":
         case "flood":
             return "water"
-
         default:
             return t
     }
@@ -416,7 +495,7 @@ private String inferTypeFromName(String name) {
     if (n.contains("pir") || n.contains("motion")) return "motion"
     if (n.contains("smoke") || n.contains("heat")) return "smoke"
     if (n.contains("carbon monoxide") || n == "co" || n.contains(" co")) return "co"
-    if (n.contains("water") || n.contains("leak") || n.contains("flood")) return "water"
+    if (n.contains("water") || n.contains("leak") || n.contains("flood") || n.contains("hvac")) return "water"
     if (n.contains("door") || n.contains("window") || n.contains("gate") || n.contains("patio")) return "contact"
 
     return null
