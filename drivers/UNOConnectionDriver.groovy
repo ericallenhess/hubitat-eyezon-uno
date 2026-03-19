@@ -18,6 +18,7 @@ metadata {
         attribute "zoneBitmapLength", "number"
         attribute "lastHeartbeat", "string"
         attribute "lastCidEvent", "string"
+        attribute "restStartupSync", "string"
 
         command "armStay"
         command "armAway"
@@ -27,14 +28,17 @@ metadata {
         command "login"
         command "clearCommandQueue"
         command "poll"
+        command "restStartupSync"
     }
 
     preferences {
         input name: "ip", type: "text", title: "UNO IP Address", required: true
         input name: "port", type: "number", title: "UNO Port", defaultValue: 4025, required: true
         input name: "password", type: "text", title: "UNO TPI Password", required: true
+        input name: "restUsername", type: "text", title: "UNO REST Username", defaultValue: "user", required: false
         input name: "masterCode", type: "text", title: "UNO Master Code", required: false
         input name: "zoneCount", type: "number", title: "Configured Zone Count", defaultValue: 27, required: true
+        input name: "useRestMetadata", type: "bool", title: "Enable REST metadata/startup sync", defaultValue: true
         input name: "debugLogging", type: "bool", title: "Enable debug logging", defaultValue: false
         input name: "traceLogging", type: "bool", title: "Enable trace logging", defaultValue: false
         input name: "heartbeatMinutes", type: "enum", title: "Heartbeat interval", options: ["1":"Every 1 minute", "5":"Every 5 minutes", "10":"Every 10 minutes"], defaultValue: "1", required: true
@@ -66,6 +70,7 @@ def initialize() {
     state.lastFrameTs = 0L
     state.lastCidByZone = [:]
     state.lastCidEvent = ""
+    state.restStartupDone = false
 
     sendEvent(name: "connectionState", value: "disconnected")
     if (!device.currentValue("alarmSystemStatus")) sendEvent(name: "alarmSystemStatus", value: "unknown")
@@ -99,6 +104,7 @@ def reconnect() {
     state.loggedIn = false
     state.loginSent = false
     state.commandInFlight = null
+    state.restStartupDone = false
 
     Integer p = safePort()
     logInfo("Opening raw socket to ${settings.ip}:${p}")
@@ -210,7 +216,9 @@ private Integer safePort() {
 
 private Integer safeInt(def val, Integer fallback) {
     try {
-        return (val ?: fallback) as Integer
+        if (val == null) return fallback
+        if (val instanceof Number) return ((Number) val).intValue()
+        return Integer.parseInt(val.toString())
     } catch (ignored) {
         return fallback
     }
@@ -363,6 +371,15 @@ private void parseFrame(String frame) {
         state.loginSent = false
         logInfo("UNO login successful")
         sendEvent(name: "connectionState", value: "authenticated")
+
+        if (settings.useRestMetadata == true && state.restStartupDone != true) {
+            try {
+                restStartupSync()
+            } catch (e) {
+                logWarn("REST startup sync failed: ${e}")
+            }
+        }
+
         rawSend(tpiCommand("0D", "") + "\r\n")
         rawSend(tpiCommand("0C", "") + "\r\n")
         processQueue()
@@ -435,6 +452,87 @@ private void parseFrame(String frame) {
             logDebug("Unhandled UNO frame ${code}: ${parts}")
             break
     }
+}
+
+def restStartupSync() {
+    if (!settings.useRestMetadata || !settings.ip || !settings.password) return
+
+    Map snapshot = restGetJson("A")
+    if (!snapshot) return
+
+    def partitions = snapshot["partitions"] instanceof List ? snapshot["partitions"] : []
+    if (partitions && partitions[0] instanceof Map) {
+        Integer pStatus = safeInt(partitions[0]["status"], -1)
+        String mapped = mapRestPartitionStatus(pStatus)
+        if (mapped) {
+            sendEvent(name: "alarmSystemStatus", value: mapped)
+            parent?.notifyPartitionState(mapped)
+        }
+    }
+
+    def zoneStatus = snapshot["zoneStatus"] instanceof List ? snapshot["zoneStatus"] : []
+    if (zoneStatus && zoneStatus[0] instanceof List) {
+        (zoneStatus[0] as List).each { z ->
+            if (!(z instanceof Map)) return
+            Integer zoneNum = safeInt(z["n"], 0)
+            Integer t = safeInt(z["t"], 0)
+            if (zoneNum <= 0) return
+
+            boolean active = isRestZoneActive(t)
+            parent?.upsertDiscoveredZone(zoneNum, null, null)
+            routeZoneUpdate(zoneNum, active, active ? "1" : "0")
+        }
+    }
+
+    state.restStartupDone = true
+    sendEvent(name: "restStartupSync", value: "ok")
+    logInfo("REST startup sync complete")
+}
+
+private boolean isRestZoneActive(Integer t) {
+    return ((t ?: 0) as Integer) == 65535
+}
+
+private String mapRestPartitionStatus(Integer status) {
+    switch (status) {
+        case 1: return "disarmed"
+        case 2: return "readyBypassed"
+        case 3: return "notReady"
+        case 4: return "armedStay"
+        case 5: return "armedAway"
+        case 8: return "exitDelay"
+        case 9: return "armedAwayZeroEntry"
+        case 12: return "entryDelay"
+        case 17: return "alarm"
+        default: return null
+    }
+}
+
+private Map restGetJson(String path) {
+    Map result = null
+    String username = (settings.restUsername ?: "user").toString()
+    String auth = "${username}:${settings.password}".bytes.encodeBase64().toString()
+
+    httpGet(
+        [
+            uri: "http://${settings.ip}/${path}",
+            headers: [
+                "Authorization": "Basic ${auth}"
+            ],
+            contentType: "application/json",
+            timeout: 5
+        ]
+    ) { resp ->
+        if (resp?.status == 200) {
+            if (resp.data instanceof Map) {
+                result = resp.data as Map
+            } else if (resp.data) {
+                result = resp.data
+            }
+        }
+    }
+
+    return result
 }
 
 private void parseAckFrame(String frame) {
@@ -589,16 +687,7 @@ private void handleCidEvent(List<String> parts) {
     parent?.upsertDiscoveredZone(zone, suggestedType, null)
 
     Set<String> fastPathZoneCodes = [
-        "110", // fire
-        "113", // burglary/alarm style
-        "130", // perimeter
-        "131", // interior
-        "132", // 24-hour burglary
-        "134", // entry/exit
-        "137", // tamper
-        "144", // sensor fault/tamper style
-        "154", // water/leakage (common CID)
-        "162"  // carbon monoxide
+        "110", "113", "130", "131", "132", "134", "137", "144", "154", "162"
     ] as Set
 
     if (!fastPathZoneCodes.contains(eventCode)) return
@@ -695,7 +784,6 @@ private void emitZoneFastEvent(Integer zoneNum, boolean active) {
 private void routeZoneUpdate(Integer zoneNum, boolean active, String digit) {
     String dni = "uno-zone-${zoneNum}"
 
-    // Ensure the app has had a chance to create the device.
     parent?.upsertDiscoveredZone(zoneNum, null, null)
 
     def child = null
