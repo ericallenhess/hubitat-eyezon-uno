@@ -2,12 +2,11 @@
   "packageName": "EyezOn UNO Hubitat Integration",
   "minimumHEVersion": "2.3.0",
   "author": "Eric Hess",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "dateReleased": "2026-03-16",
   "documentationLink": "https://github.com/ericallenhess/hubitat-eyezon-uno",
   "communityLink": "https://community.hubitat.com/",
-  "releaseNotes": "Initial release: native Hubitat integration for the EyezOn UNO alarm system, including zone discovery, partition device, fast automation events, and watchdog reconnect.",
-  "licenseFile": "https://raw.githubusercontent.com/<your-github-username>/hubitat-eyezon-uno/main/LICENSE",
+  "releaseNotes": "Added optional UNO REST integration for automatic zone labels, partition label, system name, and startup zone-state synchronization. TPI remains the real-time event and control path."  "licenseFile": "https://raw.githubusercontent.com/<your-github-username>/hubitat-eyezon-uno/main/LICENSE",
   "apps": [
     {
       "id": "uno-app-0001",
