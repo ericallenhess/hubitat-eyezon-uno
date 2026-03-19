@@ -20,17 +20,33 @@ A production-grade Hubitat integration for the **EyezOn UNO Alarm System**.
 - Fast location events for low-latency automations: `unoZoneEvent`
 - Watchdog reconnect and heartbeat polling
 - CID fast-path support for alarm-class events
+- REST metadata support for zone labels and partition label
+- REST startup sync for immediate zone-state initialization after reconnect
+  
+## REST metadata and startup sync
 
+The integration can optionally use the UNO local REST interface for:
+
+- zone labels
+- partition label
+- system name
+- startup zone-state synchronization
+
+Default REST username is:
+
+`user`
+
+TPI remains the real-time event and control path.
 ## Roadmap
 
-### v1.1
+### v1.2
 Planned improvements:
 
 • alarm event history attributes  
 • semantic CID event mapping  
 • improved dashboard support  
 
-### v1.2
+### v1.3
 Potential future improvements:
 
 • zone ignore / disable support  
